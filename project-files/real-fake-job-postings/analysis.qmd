@@ -1,0 +1,170 @@
+---
+title: "KSB620 SA2 – Visual Summaries"
+author: "Tazvitya Aubrey Chihota"
+format: pdf
+---
+
+## Introduction
+ 
+The goal of this report is to apply effective data presentation techniques by producing seven high-quality visuals and descriptive tables using the **Real or Fake Job Postings** dataset.  
+
+The dataset contains job listings with various attributes such as employment type, salary range, required experience, telecommuting availability, and a binary indicator showing whether a posting is **fraudulent** or **legitimate**.  
+
+The analysis explores these variables through:
+- Two **univariate plots** to describe single-variable distributions.  
+- One **bivariate**, one **trivariate**, and one **quadrivariate** plot to examine relationships between multiple variables.  
+- Two **descriptive tables** (one categorical and one numeric) to summarize key data characteristics.  
+
+All visuals are generated using **R and the tidyverse**, following the *Effectively Presenting Data* principles — emphasizing clarity, simplicity, and accessibility. Each visualization is accompanied by a brief interpretation highlighting meaningful insights about employment trends and fraudulent activity patterns.
+
+```{r setup}
+# Load libraries
+library(tidyverse)
+library(janitor)
+library(scales)
+library(knitr)
+
+# Load dataset
+jobs <- read_csv("real_fake_job_postings.csv") %>% clean_names()
+
+# Prepare salary variables
+jobs <- jobs %>%
+  separate(salary_range, into = c("min_salary", "max_salary"), sep = "-", remove = FALSE, fill = "right") %>%
+  mutate(across(c(min_salary, max_salary), ~ as.numeric(str_remove_all(., "[^0-9]")))) %>%
+  mutate(avg_salary = (min_salary + max_salary) / 2) %>%
+  mutate(across(c(employment_type, required_experience, industry, fraudulent),~ replace_na(., "Unknown")))
+
+```
+
+```{r}
+#| label: Univariate Plot (Categorical Variable)
+ggplot(jobs, aes(x = employment_type, fill = employment_type)) +
+  geom_bar() +
+  theme_minimal(base_size = 12) +
+  labs(title = "Distribution of Employment Types",
+       x = "Employment Type", y = "Number of Postings") +
+  theme(legend.position = "none")
+
+```
+## Most job postings are full-time positions, showing a dominance of stable employment over part-time or contract work.
+
+```{r}
+#| label: Univariate Plot (Numeric Variable)
+# Filter valid salaries to remove NAs and zeros
+salary_data <- jobs %>%
+  filter(!is.na(avg_salary), avg_salary > 0, avg_salary < 500000)
+
+# Histogram of average salaries
+ggplot(salary_data, aes(x = avg_salary)) +
+  geom_histogram(binwidth = 10000, fill = "#0072B2", color = "white", alpha = 0.8) +
+  scale_x_continuous(labels = comma) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Distribution of Average Salaries in Job Postings",
+    x = "Average Salary (USD)",
+    y = "Number of Job Postings"
+  ) +
+  geom_vline(aes(xintercept = median(avg_salary, na.rm = TRUE)), color = "red", linetype = "dashed", size = 1)
+
+
+```
+## The distribution is right-skewed, with most jobs offering salaries below $70,000 and a few highly paid outliers.
+
+```{r}
+#| label: Bivariate Plot (Categorical + Numeric)
+# Use cleaned salary data for valid salary values
+ggplot(salary_data, aes(x = employment_type, y = avg_salary, fill = employment_type)) +
+  geom_boxplot(outlier.alpha = 0.3, color = "gray20") +
+  scale_y_continuous(labels = comma, limits = c(0, 200000)) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Average Salary by Employment Type",
+    x = "Employment Type",
+    y = "Average Salary (USD)"
+  ) +
+  theme(legend.position = "none") +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "yellow")
+
+
+```
+
+## Full-time positions show the widest salary spread and the highest average pay, while internships and temporary roles remain at the lower end.
+```{r}
+#| label: Trivariate Plot (Two Numeric + One Categorical)
+ggplot(jobs, aes(x = telecommuting, y = has_company_logo, color = as.factor(fraudulent))) +
+  geom_jitter(alpha = 0.4) +
+  scale_color_manual(values = c("0" = "#2c7fb8", "1" = "#de2d26"),
+                     labels = c("Legit", "Fraudulent")) +
+  theme_minimal(base_size = 12) +
+  labs(title = "Telecommuting and Company Logo vs Fraudulent Postings",
+       x = "Telecommuting (0=No, 1=Yes)",
+       y = "Has Company Logo (0=No, 1=Yes)",
+       color = "Posting Type")
+
+```
+
+## Fraudulent postings are more common among listings that lack company logos and allow telecommuting.
+
+```{r}
+#| label: Quadrivariate Plot (4 Variables)
+# Clean and simplify experience labels
+jobs_cleaned <- jobs %>%
+  filter(required_experience != "Unknown", employment_type != "Unknown") %>%
+  mutate(
+    required_experience = str_to_title(required_experience),
+    required_experience = recode(required_experience,
+      "Internship" = "Intern",
+      "Entry Level" = "Entry",
+      "Associate" = "Assoc",
+      "Mid-Senior Level" = "Mid-Senior",
+      "Director" = "Dir",
+      "Executive" = "Exec"
+    ),
+    required_experience = fct_infreq(required_experience)
+  )
+
+# Improved quadrivariate plot
+ggplot(jobs_cleaned, aes(x = required_experience, fill = as.factor(fraudulent))) +
+  geom_bar(position = "fill") +
+  facet_wrap(~ employment_type, ncol = 3) +
+  scale_fill_manual(values = c("0" = "#4daf4a", "1" = "#e41a1c"),
+                    labels = c("Legit", "Fraudulent")) +
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Fraud Rate by Experience Level and Employment Type",
+    x = "Required Experience Level",
+    y = "Proportion",
+    fill = "Posting Type"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+
+```
+## Fraudulent jobs concentrate in entry-level full-time listings, suggesting scammers target inexperienced applicants.
+```{r}
+#| label: Descriptive Table – Categorical Variable
+cat_table <- jobs %>%
+  count(employment_type) %>%
+  mutate(Percent = percent(n / sum(n)))
+kable(cat_table, caption = "Table 1: Distribution of Employment Types")
+
+```
+## Over half of postings are full-time roles, confirming a high demand for regular employment contracts.
+
+```{r}
+#| label: Descriptive Table – Numeric Variable
+num_table <- jobs %>%
+  summarize(
+    Mean_Salary = mean(avg_salary, na.rm = TRUE),
+    Median_Salary = median(avg_salary, na.rm = TRUE),
+    SD_Salary = sd(avg_salary, na.rm = TRUE),
+    Min_Salary = min(avg_salary, na.rm = TRUE),
+    Max_Salary = max(avg_salary, na.rm = TRUE)
+  )
+kable(num_table, caption = "Table 2: Summary Statistics for Average Salary")
+
+```
+## The salary range shows high variance, indicating that the dataset includes both entry-level and high-paying roles.
